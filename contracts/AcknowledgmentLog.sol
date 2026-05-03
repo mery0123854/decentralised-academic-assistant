@@ -31,8 +31,8 @@ contract AcknowledgmentLog is AccessControl {
 
         acknowledgments.push(Acknowledgment({
             announcementId: announcementId,
-            student:        msg.sender,
-            timestamp:      block.timestamp
+            student: msg.sender,
+            timestamp: block.timestamp
         }));
 
         signed[announcementId][msg.sender] = true;
@@ -43,12 +43,14 @@ contract AcknowledgmentLog is AccessControl {
         return signed[announcementId][student];
     }
 
+    function getCount() external view returns (uint256) {
+        return acknowledgments.length;
+    }
+
     function getAcknowledgments(uint256 announcementId) external view returns (Acknowledgment[] memory) {
         uint256 count = 0;
         for (uint256 i = 0; i < acknowledgments.length; i++) {
-            if (acknowledgments[i].announcementId == announcementId) {
-                count++;
-            }
+            if (acknowledgments[i].announcementId == announcementId) count++;
         }
         
         Acknowledgment[] memory result = new Acknowledgment[](count);
@@ -59,11 +61,6 @@ contract AcknowledgmentLog is AccessControl {
                 index++;
             }
         }
-        
         return result;
-    }
-
-    function getCount() external view returns (uint256) {
-        return acknowledgments.length;
     }
 }

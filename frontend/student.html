@@ -22,7 +22,7 @@
       <div class="card">
         <h3>💬 Posez votre question</h3>
         <div class="chat-area" id="chat-area">
-          <div class="msg bot">👋 Bonjour !</div>
+          <div class="msg bot">👋 Bonjour ! Posez-moi une question sur le cours.</div>
         </div>
         <div class="chat-row">
           <input type="text" class="chat-input" id="chat-input" placeholder="Ex : C'est quand l'examen ?">
@@ -54,13 +54,11 @@
   let account = null;
   let userGroup = "ALL";
   let acknowledgmentAddress = null;
-  let roleManagerAddress = null;
 
   async function loadContractAddresses() {
     const res = await fetch("/contract-addresses.json");
     const data = await res.json();
     acknowledgmentAddress = data.acknowledgmentLog;
-    roleManagerAddress = data.roleManager;
   }
 
   document.getElementById("connect-btn").onclick = async () => {
@@ -75,113 +73,9 @@
     document.getElementById("role-badge").innerText = `👩‍🎓 Groupe : ${userGroup}`;
 
     await loadContractAddresses();
-    
-    // Vérifier si l'utilisateur a le rôle STUDENT_ROLE
-    const hasRole = await checkStudentRole();
-    if (!hasRole) {
-      showRoleRequestButton();
-    } else {
-      loadAnnouncements();
-    }
-    
+    loadAnnouncements();
     toast(`Bienvenue groupe ${userGroup}`, "ok");
   };
-
-  async function checkStudentRole() {
-    try {
-      const roleManagerAbi = [
-        {
-          type: "function",
-          name: "isStudent",
-          inputs: [{ name: "user", type: "address" }],
-          outputs: [{ name: "", type: "bool" }],
-          stateMutability: "view"
-        }
-      ];
-
-      const isStudent = await window.ethereum.request({
-        method: "eth_call",
-        params: [{
-          to: roleManagerAddress,
-          data: viem.encodeFunctionData({
-            abi: roleManagerAbi,
-            functionName: "isStudent",
-            args: [account]
-          })
-        }]
-      });
-      
-      return viem.decodeFunctionResult({
-        abi: roleManagerAbi,
-        functionName: "isStudent",
-        data: isStudent
-      });
-    } catch (err) {
-      console.error("Erreur vérification rôle:", err);
-      return false;
-    }
-  }
-
-  function showRoleRequestButton() {
-    const container = document.querySelector('.container');
-    const roleBtn = document.createElement('div');
-    roleBtn.id = 'role-request-banner';
-    roleBtn.style.cssText = `
-      background: #fff3cd;
-      border: 1px solid #ffeaa7;
-      border-radius: 5px;
-      padding: 15px;
-      margin: 20px 0;
-      text-align: center;
-    `;
-    roleBtn.innerHTML = `
-      <p style='margin:0 0 10px 0;color:#856404;'>Vous devez obtenir le rôle Étudiant pour signer les annonces.</p>
-      <button id='request-role-btn' style='background:#ffc107;color:white;border:none;padding:8px 16px;border-radius:3px;cursor:pointer;'>Demander le rôle Étudiant</button>
-    `;
-    container.insertBefore(roleBtn, container.children[1]);
-    
-    document.getElementById('request-role-btn').onclick = requestStudentRole;
-  }
-
-  async function requestStudentRole() {
-    try {
-      toast("Demande du rôle Étudiant...", "ok");
-      
-      const roleManagerAbi = [
-        {
-          type: "function",
-          name: "requestStudentRole",
-          inputs: [],
-          outputs: [],
-          stateMutability: "nonpayable"
-        }
-      ];
-
-      const data = viem.encodeFunctionData({
-        abi: roleManagerAbi,
-        functionName: "requestStudentRole",
-        args: []
-      });
-
-      const tx = {
-        from: account,
-        to: roleManagerAddress,
-        data: data
-      };
-
-      const txHash = await window.ethereum.request({
-        method: "eth_sendTransaction",
-        params: [tx]
-      });
-
-      toast("Rôle Étudiant obtenu !", "ok");
-      document.getElementById('role-request-banner').remove();
-      loadAnnouncements();
-    } catch (err) {
-      console.error(err);
-      toast("Erreur lors de la demande du rôle", "err");
-    }
-  }
 
   async function loadAnnouncements() {
     const res = await fetch(`${API}/announcement`);
@@ -227,21 +121,7 @@
     toast("✍️ Signez la transaction dans MetaMask...", "ok");
 
     try {
-      const acknowledgmentAbi = [
-        {
-          type: "function",
-          name: "acknowledge",
-          inputs: [{ name: "announcementId", type: "uint256" }],
-          outputs: [],
-          stateMutability: "nonpayable"
-        }
-      ];
-
-      const data = viem.encodeFunctionData({
-        abi: acknowledgmentAbi,
-        functionName: "acknowledge",
-        args: [BigInt(annonceId)]
-      });
+      const data = "0x" + "0".repeat(8) + Number(annonceId).toString(16).padStart(64, "0");
 
       const tx = {
         from: account,
@@ -287,7 +167,6 @@
     area.scrollTop = area.scrollHeight;
   }
 
-  // Drag & drop
   const drop = document.getElementById("drop-zone");
   const fileInput = document.getElementById("file-input");
   drop.onclick = () => fileInput.click();

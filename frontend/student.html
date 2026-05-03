@@ -1,0 +1,324 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <title>Assistant Académique — Étudiant</title>
+  <link rel="stylesheet" href="styles.css">
+  <script src="https://cdn.jsdelivr.net/npm/viem@2.7.15/dist/viem.min.js"></script>
+</head>
+<body>
+<div class="container">
+  <div class="header">
+    <h1>📚 Assistant Académique</h1>
+    <div class="wallet-info">
+      <span class="wallet-address" id="wallet-address">Non connecté</span>
+      <span class="role-badge" id="role-badge">👩‍🎓 Étudiant</span>
+      <button class="connect-btn" id="connect-btn">🔌 Connecter MetaMask</button>
+    </div>
+  </div>
+
+  <div class="grid-2">
+    <div>
+      <div class="card">
+        <h3>💬 Posez votre question</h3>
+        <div class="chat-area" id="chat-area">
+          <div class="msg bot">👋 Bonjour !</div>
+        </div>
+        <div class="chat-row">
+          <input type="text" class="chat-input" id="chat-input" placeholder="Ex : C'est quand l'examen ?">
+          <button class="btn btn-blue" id="send-btn">📤</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <h3>🔍 Vérifier un document</h3>
+        <div class="drop-zone" id="drop-zone">
+          📁 Glisse un PDF ici
+          <input type="file" id="file-input" accept=".pdf">
+        </div>
+        <div id="verify-result"></div>
+      </div>
+    </div>
+
+    <div>
+      <div class="card">
+        <h3>📢 Annonces</h3>
+        <div id="ann-list"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  const API = "http://localhost:3000/api";
+  let account = null;
+  let userGroup = "ALL";
+  let acknowledgmentAddress = null;
+  let roleManagerAddress = null;
+
+  async function loadContractAddresses() {
+    const res = await fetch("/contract-addresses.json");
+    const data = await res.json();
+    acknowledgmentAddress = data.acknowledgmentLog;
+    roleManagerAddress = data.roleManager;
+  }
+
+  document.getElementById("connect-btn").onclick = async () => {
+    if (!window.ethereum) return toast("MetaMask manquant", "err");
+    const acc = await window.ethereum.request({ method: "eth_requestAccounts" });
+    account = acc[0];
+    document.getElementById("wallet-address").innerText = account.slice(0,6)+"…"+account.slice(-4);
+
+    const r = await fetch(`${API}/student-group/${account}`);
+    const data = await r.json();
+    userGroup = data.group === "" ? "ALL" : data.group;
+    document.getElementById("role-badge").innerText = `👩‍🎓 Groupe : ${userGroup}`;
+
+    await loadContractAddresses();
+    
+    // Vérifier si l'utilisateur a le rôle STUDENT_ROLE
+    const hasRole = await checkStudentRole();
+    if (!hasRole) {
+      showRoleRequestButton();
+    } else {
+      loadAnnouncements();
+    }
+    
+    toast(`Bienvenue groupe ${userGroup}`, "ok");
+  };
+
+  async function checkStudentRole() {
+    try {
+      const roleManagerAbi = [
+        {
+          type: "function",
+          name: "isStudent",
+          inputs: [{ name: "user", type: "address" }],
+          outputs: [{ name: "", type: "bool" }],
+          stateMutability: "view"
+        }
+      ];
+
+      const isStudent = await window.ethereum.request({
+        method: "eth_call",
+        params: [{
+          to: roleManagerAddress,
+          data: viem.encodeFunctionData({
+            abi: roleManagerAbi,
+            functionName: "isStudent",
+            args: [account]
+          })
+        }]
+      });
+      
+      return viem.decodeFunctionResult({
+        abi: roleManagerAbi,
+        functionName: "isStudent",
+        data: isStudent
+      });
+    } catch (err) {
+      console.error("Erreur vérification rôle:", err);
+      return false;
+    }
+  }
+
+  function showRoleRequestButton() {
+    const container = document.querySelector('.container');
+    const roleBtn = document.createElement('div');
+    roleBtn.id = 'role-request-banner';
+    roleBtn.style.cssText = `
+      background: #fff3cd;
+      border: 1px solid #ffeaa7;
+      border-radius: 5px;
+      padding: 15px;
+      margin: 20px 0;
+      text-align: center;
+    `;
+    roleBtn.innerHTML = `
+      <p style='margin:0 0 10px 0;color:#856404;'>Vous devez obtenir le rôle Étudiant pour signer les annonces.</p>
+      <button id='request-role-btn' style='background:#ffc107;color:white;border:none;padding:8px 16px;border-radius:3px;cursor:pointer;'>Demander le rôle Étudiant</button>
+    `;
+    container.insertBefore(roleBtn, container.children[1]);
+    
+    document.getElementById('request-role-btn').onclick = requestStudentRole;
+  }
+
+  async function requestStudentRole() {
+    try {
+      toast("Demande du rôle Étudiant...", "ok");
+      
+      const roleManagerAbi = [
+        {
+          type: "function",
+          name: "requestStudentRole",
+          inputs: [],
+          outputs: [],
+          stateMutability: "nonpayable"
+        }
+      ];
+
+      const data = viem.encodeFunctionData({
+        abi: roleManagerAbi,
+        functionName: "requestStudentRole",
+        args: []
+      });
+
+      const tx = {
+        from: account,
+        to: roleManagerAddress,
+        data: data
+      };
+
+      const txHash = await window.ethereum.request({
+        method: "eth_sendTransaction",
+        params: [tx]
+      });
+
+      toast("Rôle Étudiant obtenu !", "ok");
+      document.getElementById('role-request-banner').remove();
+      loadAnnouncements();
+    } catch (err) {
+      console.error(err);
+      toast("Erreur lors de la demande du rôle", "err");
+    }
+  }
+
+  async function loadAnnouncements() {
+    const res = await fetch(`${API}/announcement`);
+    const all = await res.json();
+    const annonces = all.announcements || [];
+
+    const visible = annonces.filter(a =>
+      a.targetGroup === "ALL" || a.targetGroup === userGroup
+    );
+
+    const container = document.getElementById("ann-list");
+    if (!visible.length) {
+      container.innerHTML = "<p>Aucune annonce disponible.</p>";
+      return;
+    }
+
+    container.innerHTML = visible.map(a => `
+      <div class="ann-item">
+        <div><strong>${a.category}</strong> : ${a.content}</div>
+        <div class="ann-meta">
+          <span>Groupe : ${a.targetGroup} | ${a.date?.slice(0,10)}</span>
+          <button class="btn-green" data-id="${a.id}" data-group="${a.targetGroup}">✅ J'ai lu</button>
+        </div>
+      </div>
+    `).join("");
+
+    document.querySelectorAll(".btn-green").forEach(btn => {
+      btn.onclick = () => {
+        const id = btn.dataset.id;
+        const group = btn.dataset.group;
+        ack(id, group);
+      };
+    });
+  }
+
+  async function ack(annonceId, annonceGroup) {
+    if (!account) return toast("Connecte MetaMask", "err");
+    if (annonceGroup !== "ALL" && annonceGroup !== userGroup) {
+      toast("Cette annonce n'est pas pour ton groupe", "err");
+      return;
+    }
+
+    toast("✍️ Signez la transaction dans MetaMask...", "ok");
+
+    try {
+      const acknowledgmentAbi = [
+        {
+          type: "function",
+          name: "acknowledge",
+          inputs: [{ name: "announcementId", type: "uint256" }],
+          outputs: [],
+          stateMutability: "nonpayable"
+        }
+      ];
+
+      const data = viem.encodeFunctionData({
+        abi: acknowledgmentAbi,
+        functionName: "acknowledge",
+        args: [BigInt(annonceId)]
+      });
+
+      const tx = {
+        from: account,
+        to: acknowledgmentAddress,
+        data: data
+      };
+
+      const txHash = await window.ethereum.request({
+        method: "eth_sendTransaction",
+        params: [tx]
+      });
+
+      toast(`✅ J'ai lu enregistré !`, "ok");
+    } catch (err) {
+      console.error(err);
+      toast("❌ Transaction refusée", "err");
+    }
+  }
+
+  document.getElementById("send-btn").onclick = async () => {
+    const q = document.getElementById("chat-input").value;
+    if (!q) return;
+    addMsg(q, "user");
+    document.getElementById("chat-input").value = "";
+    addMsg("🔄 Réflexion...", "bot", "thinking");
+    const r = await fetch(`${API}/chat`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ question: q, studentGroup: userGroup })
+    });
+    const data = await r.json();
+    document.getElementById("thinking")?.remove();
+    addMsg(data.answer || data.error, "bot");
+  };
+
+  function addMsg(t, sender, id="") {
+    const msg = document.createElement("div");
+    msg.className = `msg ${sender}`;
+    if (id) msg.id = id;
+    msg.innerText = t;
+    document.getElementById("chat-area").appendChild(msg);
+    const area = document.getElementById("chat-area");
+    area.scrollTop = area.scrollHeight;
+  }
+
+  // Drag & drop
+  const drop = document.getElementById("drop-zone");
+  const fileInput = document.getElementById("file-input");
+  drop.onclick = () => fileInput.click();
+  drop.ondragover = e => { e.preventDefault(); drop.classList.add("over"); };
+  drop.ondragleave = () => drop.classList.remove("over");
+  drop.ondrop = async e => {
+    e.preventDefault();
+    drop.classList.remove("over");
+    const file = e.dataTransfer.files[0];
+    if (file) verify(file);
+  };
+  fileInput.onchange = e => verify(e.target.files[0]);
+
+  async function verify(file) {
+    const resDiv = document.getElementById("verify-result");
+    resDiv.innerHTML = "📄 Calcul du hash...";
+    const buf = await file.arrayBuffer();
+    const hash = await crypto.subtle.digest("SHA-256", buf);
+    const hex = Array.from(new Uint8Array(hash)).map(b=>b.toString(16).padStart(2,"0")).join("");
+    const r = await fetch(`${API}/verify/document/${hex}`);
+    const data = await r.json();
+    resDiv.innerHTML = data.isValid ? "✅ Document authentique" : "❌ Document inconnu";
+  }
+
+  function toast(msg, type) {
+    const t = document.createElement("div");
+    t.className = `toast ${type}`;
+    t.innerText = msg;
+    document.body.appendChild(t);
+    setTimeout(() => t.remove(), 3000);
+  }
+</script>
+</body>
+</html>

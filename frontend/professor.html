@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Assistant Académique — Professeur</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<div class="container">
+
+  <div class="header">
+    <h1>👨‍🏫 Tableau de bord Professeur</h1>
+    <div class="wallet-info">
+      <span class="wallet-address" id="wallet-address">Non connecté</span>
+      <span class="role-badge" id="role-badge">👨‍🏫 Professeur</span>
+      <button class="connect-btn" id="connect-btn">🔌 Connecter MetaMask</button>
+    </div>
+  </div>
+
+  <div class="grid-2">
+
+    <div>
+      <div class="card">
+        <h3>✏️ Publier une annonce</h3>
+        <div class="form-group">
+          <label>Contenu</label>
+          <textarea id="ann-content" rows="4" placeholder="Ex : L'examen final aura lieu le 15 juin en salle A101."></textarea>
+        </div>
+        <div class="form-group">
+          <label>Catégorie</label>
+          <select id="ann-category">
+            <option value="examen">📝 Examen</option>
+            <option value="cours">📖 Cours</option>
+            <option value="devoir">📋 Devoir</option>
+            <option value="autre">📢 Autre</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Groupe</label>
+          <select id="ann-group">
+            <option value="ALL">🌍 Tous les groupes</option>
+            <option value="MF1">👥 MF1</option>
+            <option value="MF2">👥 MF2</option>
+          </select>
+        </div>
+        <button class="btn btn-blue" id="publish-btn">📢 Publier</button>
+        <div id="publish-result"></div>
+      </div>
+
+      <div class="card">
+        <h3>📄 Enregistrer un document</h3>
+        <div class="form-group">
+          <label>Fichier PDF</label>
+          <input type="file" id="doc-file" accept=".pdf">
+        </div>
+        <div class="form-group">
+          <label>Groupe</label>
+          <select id="doc-group">
+            <option value="ALL">🌍 Tous les groupes</option>
+            <option value="MF1">👥 MF1</option>
+            <option value="MF2">👥 MF2</option>
+          </select>
+        </div>
+        <button class="btn btn-blue" id="upload-btn">📤 Uploader & Enregistrer</button>
+        <div id="upload-result"></div>
+      </div>
+    </div>
+
+    <div>
+      <div class="card">
+        <h3>📊 Suivi des lectures</h3>
+        <div class="form-group">
+          <label>Choisir une annonce</label>
+          <select id="ann-select">
+            <option value="">-- Sélectionner --</option>
+          </select>
+        </div>
+        <div id="tracker">
+          <p style="color:#888;font-size:14px;">Sélectionnez une annonce pour voir les signatures.</p>
+        </div>
+      </div>
+
+      <div class="card">
+        <h3>📋 Annonces publiées</h3>
+        <div id="ann-list"><p style="color:#888;font-size:14px;">Aucune annonce publiée.</p></div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<script>
+  const API = "http://localhost:3000/api";
+  let account = null;
+  let announcements = [];
+
+  document.getElementById("connect-btn").addEventListener("click", async () => {
+    if (!window.ethereum) return toast("MetaMask non installé !", "err");
+    const accounts = await window.ethereum.request({ method: "eth_requestAccounts" });
+    account = accounts[0];
+    document.getElementById("wallet-address").textContent =
+      account.slice(0, 6) + "..." + account.slice(-4);
+    toast("Connecté !", "ok");
+    loadAnnouncements();
+  });
+
+  document.getElementById("publish-btn").addEventListener("click", async () => {
+    const content = document.getElementById("ann-content").value.trim();
+    const category = document.getElementById("ann-category").value;
+    const group = document.getElementById("ann-group").value;
+    const res = document.getElementById("publish-result");
+
+    if (!content) return toast("Écris d'abord le contenu", "err");
+
+    const btn = document.getElementById("publish-btn");
+    btn.disabled = true;
+    btn.textContent = "Publication...";
+    res.innerHTML = "";
+
+    try {
+      const r = await fetch(`${API}/announcement`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ content, category, targetGroup: group }),
+      });
+      const data = await r.json();
+      if (data.success) {
+        res.innerHTML = `<div class="result valid">✅ Publiée ! Hash: ${data.contentHash.slice(0,20)}...</div>`;
+        document.getElementById("ann-content").value = "";
+        toast("Annonce publiée sur la blockchain !", "ok");
+        loadAnnouncements();
+      } else {
+        res.innerHTML = `<div class="result invalid">❌ ${data.error}</div>`;
+      }
+    } catch {
+      res.innerHTML = `<div class="result invalid">❌ Serveur inaccessible</div>`;
+    } finally {
+      btn.disabled = false;
+      btn.textContent = "📢 Publier";
+    }
+  });
+
+  document.getElementById("upload-btn").addEventListener("click", async () => {
+    const file = document.getElementById("doc-file").files[0];
+    const group = document.getElementById("doc-group").value;
+    const res = document.getElementById("upload-result");
+
+    if (!file) return toast("Choisis un fichier PDF", "err");
+
+    const btn = document.getElementById("upload-btn");
+    btn.disabled = true;
+    btn.textContent = "Upload...";
+    res.innerHTML = "";
+
+    const form = new FormData();
+    form.append("file", file);
+    form.append("targetGroup", group);
+
+    try {
+      const r = await fetch(`${API}/document`, { method: "POST", body: form });
+      const data = await r.json();
+      if (data.success) {
+        res.innerHTML = `<div class="result valid">✅ Enregistré !<br>Hash : ${data.fileHash.slice(0,30)}...</div>`;
+        toast("Document enregistré sur la blockchain !", "ok");
+      } else {
+        res.innerHTML = `<div class="result invalid">❌ ${data.error}</div>`;
+      }
+    } catch (err) {
+      console.error(err);
+      res.innerHTML = `<div class="result invalid">❌ Erreur réseau</div>`;
+    } finally {
+      btn.disabled = false;
+      btn.textContent = "📤 Uploader & Enregistrer";
+    }
+  });
+
+  async function loadAnnouncements() {
+    try {
+      const r = await fetch(`${API}/announcement`);
+      const data = await r.json();
+      announcements = data.announcements || [];
+      renderAnnouncements();
+      populateSelect();
+    } catch {
+      document.getElementById("ann-list").innerHTML = "<p style='color:#888;font-size:14px;'>Erreur de chargement.</p>";
+    }
+  }
+
+  function renderAnnouncements() {
+    const el = document.getElementById("ann-list");
+    if (announcements.length === 0) {
+      el.innerHTML = "<p style='color:#888;font-size:14px;'>Aucune annonce publiée.</p>";
+      return;
+    }
+    el.innerHTML = announcements.map(a => `
+      <div class="ann-item">
+        <div class="ann-content">📌 ${a.content}</div>
+        <div class="ann-meta">
+          <span>👥 ${a.targetGroup} &nbsp;|&nbsp; 📅 ${a.date?.slice(0,10) || ""}</span>
+          <span style="font-size:11px;color:#aaa;">#${a.id}</span>
+        </div>
+      </div>
+    `).join("");
+  }
+
+  function populateSelect() {
+    const sel = document.getElementById("ann-select");
+    sel.innerHTML = '<option value="">-- Sélectionner --</option>' +
+      announcements.map(a => `<option value="${a.id}">#${a.id} — ${a.content.slice(0, 40)}...</option>`).join("");
+  }
+
+  document.getElementById("ann-select").addEventListener("change", async (e) => {
+    const id = e.target.value;
+    const el = document.getElementById("tracker");
+    if (!id) {
+      el.innerHTML = "<p style='color:#888;font-size:14px;'>Sélectionnez une annonce pour voir les signatures.</p>";
+      return;
+    }
+
+    // Afficher un message de chargement
+    el.innerHTML = "<p style='color:#888;font-size:14px;'>Chargement des signatures...</p>";
+
+    try {
+      // Récupérer les vraies signatures depuis la blockchain
+      const r = await fetch(`${API}/acknowledge/announcement/${id}`);
+      const data = await r.json();
+
+      if (data.acknowledgments && data.acknowledgments.length > 0) {
+        el.innerHTML = `
+          <p style='color:#555;font-size:13px;margin-bottom:10px;'>📝 Signature "J'ai lu" pour l'annonce #${id}</p>
+          <div style='max-height:300px;overflow-y:auto;border:1px solid #ddd;border-radius:5px;padding:10px;background:#f9f9f9;'>
+            ${data.acknowledgments.map(ack => `
+              <div style='margin-bottom:8px;padding:8px;background:white;border-radius:3px;border-left:3px solid #4CAF50;'>
+                <div style='font-family:monospace;font-size:12px;color:#666;'>${ack.student}</div>
+                <div style='font-size:11px;color:#888;'>Signé le ${ack.date}</div>
+              </div>
+            `).join("")}
+          </div>
+        `;
+      } else {
+        el.innerHTML = `
+          <p style='color:#555;font-size:13px;margin-bottom:10px;'>📝 Signature "J'ai lu" pour l'annonce #${id}</p>
+          <p style='color:#888;font-size:13px;'>Aucune signature enregistrée pour cette annonce.</p>
+        `;
+      }
+    } catch (err) {
+      console.error("Erreur lors de la récupération des signatures:", err);
+      el.innerHTML = `
+        <p style='color:#555;font-size:13px;margin-bottom:10px;'>📝 Signature "J'ai lu" pour l'annonce #${id}</p>
+        <p style='color:#f44336;font-size:13px;'>Erreur lors du chargement des signatures.</p>
+      `;
+    }
+  });
+
+  function toast(msg, type = "ok") {
+    const t = document.createElement("div");
+    t.className = "toast " + type;
+    t.textContent = msg;
+    document.body.appendChild(t);
+    setTimeout(() => t.remove(), 3500);
+  }
+</script>
+</body>
+</html>

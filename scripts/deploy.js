@@ -41,13 +41,24 @@ async function main() {
   const PROFESSOR_ROLE = await announcementLog.PROFESSOR_ROLE();
   const STUDENT_ROLE = await roleManager.STUDENT_ROLE();
 
-  // 6. Accorder les rôles au déployeur
+  // 6. Accorder les rôles
   await announcementLog.grantRole(PROFESSOR_ROLE, deployer.address);
   await documentRegistry.grantRole(PROFESSOR_ROLE, deployer.address);
   await acknowledgmentLog.grantRole(STUDENT_ROLE, deployer.address);
   
+  // 👇 Ajouter le rôle STUDENT à quelques comptes étudiants (Account #1, #2)
+  const students = [
+    "0x70997970C51812dc3A010C7d01b50e0d17dc79C8", // Account #1
+    "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC"  // Account #2
+  ];
+  
+  for (const student of students) {
+    await acknowledgmentLog.grantRole(STUDENT_ROLE, student);
+    console.log(`🔑 Rôle STUDENT accordé à ${student}`);
+  }
+  
   console.log(`\n🔑 Rôle PROFESSOR accordé au déployeur`);
-  console.log(`🔑 Rôle STUDENT accordé au déployeur (pour tester le bouton J'ai lu)`);
+  console.log(`🔑 Rôle STUDENT accordé au déployeur (pour test)`);
 
   // 7. Sauvegarder les adresses
   const addresses = {

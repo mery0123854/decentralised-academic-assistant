@@ -124,24 +124,25 @@ const acknowledgmentLogAbi = [
   },
   {
     type: "function",
-    name: "getAcknowledgments",
-    inputs: [{ name: "announcementId", type: "uint256" }],
-    outputs: [{
-      name: "",
-      type: "tuple[]",
-      components: [
-        { name: "announcementId", type: "uint256" },
-        { name: "student", type: "address" },
-        { name: "timestamp", type: "uint256" }
-      ]
-    }],
+    name: "getCount",
+    inputs: [],
+    outputs: [{ name: "", type: "uint256" }],
     stateMutability: "view",
   },
   {
     type: "function",
-    name: "getCount",
-    inputs: [],
-    outputs: [{ name: "", type: "uint256" }],
+    name: "getAcknowledgments",
+    inputs: [{ name: "announcementId", type: "uint256" }],
+    outputs: [
+      {
+        type: "tuple[]",
+        components: [
+          { name: "announcementId", type: "uint256" },
+          { name: "student", type: "address" },
+          { name: "timestamp", type: "uint256" },
+        ],
+      },
+    ],
     stateMutability: "view",
   },
 ];

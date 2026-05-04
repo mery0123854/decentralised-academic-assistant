@@ -56,9 +56,13 @@
   let acknowledgmentAddress = null;
 
   async function loadContractAddresses() {
-    const res = await fetch("/contract-addresses.json");
-    const data = await res.json();
-    acknowledgmentAddress = data.acknowledgmentLog;
+    try {
+      const res = await fetch("/contract-addresses.json");
+      const data = await res.json();
+      acknowledgmentAddress = data.acknowledgmentLog;
+    } catch (err) {
+      console.error("Erreur chargement adresses contrat:", err);
+    }
   }
 
   document.getElementById("connect-btn").onclick = async () => {
@@ -67,9 +71,14 @@
     account = acc[0];
     document.getElementById("wallet-address").innerText = account.slice(0,6)+"…"+account.slice(-4);
 
-    const r = await fetch(`${API}/student-group/${account}`);
-    const data = await r.json();
-    userGroup = data.group === "" ? "ALL" : data.group;
+    try {
+      const r = await fetch(`${API}/student-group/${account}`);
+      const data = await r.json();
+      userGroup = data.group === "" ? "ALL" : data.group;
+    } catch (err) {
+      console.error("Erreur récupération groupe:", err);
+      userGroup = "ALL";
+    }
     document.getElementById("role-badge").innerText = `👩‍🎓 Groupe : ${userGroup}`;
 
     await loadContractAddresses();
@@ -78,55 +87,79 @@
   };
 
   async function loadAnnouncements() {
-    const res = await fetch(`${API}/announcement`);
-    const all = await res.json();
-    const annonces = all.announcements || [];
+    try {
+      const res = await fetch(`${API}/announcement`);
+      const all = await res.json();
+      const annonces = all.announcements || [];
 
-    const visible = annonces.filter(a =>
-      a.targetGroup === "ALL" || a.targetGroup === userGroup
-    );
+      const visible = annonces.filter(a =>
+        a.targetGroup === "ALL" || a.targetGroup === userGroup
+      );
 
-    const container = document.getElementById("ann-list");
-    if (!visible.length) {
-      container.innerHTML = "<p>Aucune annonce disponible.</p>";
-      return;
-    }
+      const container = document.getElementById("ann-list");
+      if (!visible.length) {
+        container.innerHTML = "<p>Aucune annonce disponible pour ton groupe.</p>";
+        return;
+      }
 
-    container.innerHTML = visible.map(a => `
-      <div class="ann-item">
-        <div><strong>${a.category}</strong> : ${a.content}</div>
-        <div class="ann-meta">
-          <span>Groupe : ${a.targetGroup} | ${a.date?.slice(0,10)}</span>
-          <button class="btn-green" data-id="${a.id}" data-group="${a.targetGroup}">✅ J'ai lu</button>
+      container.innerHTML = visible.map(a => `
+        <div class="ann-item">
+          <div><strong>${a.category}</strong> : ${a.content}</div>
+          <div class="ann-meta">
+            <span>Groupe : ${a.targetGroup} | ${a.date?.slice(0,10) || ""}</span>
+            <button class="btn-green" data-id="${a.id}" data-group="${a.targetGroup}">✅ J'ai lu</button>
+          </div>
         </div>
-      </div>
-    `).join("");
+      `).join("");
 
-    document.querySelectorAll(".btn-green").forEach(btn => {
-      btn.onclick = () => {
-        const id = btn.dataset.id;
-        const group = btn.dataset.group;
-        ack(id, group);
-      };
-    });
+      document.querySelectorAll(".btn-green").forEach(btn => {
+        btn.onclick = () => {
+          const id = btn.dataset.id;
+          const group = btn.dataset.group;
+          ack(id, group, btn);
+        };
+      });
+    } catch (err) {
+      console.error("Erreur chargement annonces:", err);
+      document.getElementById("ann-list").innerHTML = "<p>Erreur chargement des annonces.</p>";
+    }
   }
 
-  async function ack(annonceId, annonceGroup) {
+  async function ack(annonceId, annonceGroup, btn) {
     if (!account) return toast("Connecte MetaMask", "err");
     if (annonceGroup !== "ALL" && annonceGroup !== userGroup) {
       toast("Cette annonce n'est pas pour ton groupe", "err");
       return;
     }
 
+    if (!acknowledgmentAddress) {
+      toast("Adresse du contrat non chargée", "err");
+      return;
+    }
+
     toast("✍️ Signez la transaction dans MetaMask...", "ok");
 
     try {
-      const data = "0x" + "0".repeat(8) + Number(annonceId).toString(16).padStart(64, "0");
+      // ABI minimale mais correcte
+      const ackAbi = [{
+        type: "function",
+        name: "acknowledge",
+        inputs: [{ name: "announcementId", type: "uint256" }],
+        outputs: [],
+        stateMutability: "nonpayable"
+      }];
+
+      const encodedData = window.viem.encodeFunctionData({
+        abi: ackAbi,
+        functionName: "acknowledge",
+        args: [BigInt(annonceId)]
+      });
 
       const tx = {
         from: account,
         to: acknowledgmentAddress,
-        data: data
+        data: encodedData,
+        gas: "0x1000000"
       };
 
       const txHash = await window.ethereum.request({
@@ -134,37 +167,44 @@
         params: [tx]
       });
 
+      btn.disabled = true;
+      btn.innerText = "✓ Lu";
       toast(`✅ J'ai lu enregistré !`, "ok");
     } catch (err) {
       console.error(err);
-      toast("❌ Transaction refusée", "err");
+      toast("❌ Transaction refusée ou erreur", "err");
     }
   }
 
   document.getElementById("send-btn").onclick = async () => {
-    const q = document.getElementById("chat-input").value;
+    const q = document.getElementById("chat-input").value.trim();
     if (!q) return;
     addMsg(q, "user");
     document.getElementById("chat-input").value = "";
     addMsg("🔄 Réflexion...", "bot", "thinking");
-    const r = await fetch(`${API}/chat`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ question: q, studentGroup: userGroup })
-    });
-    const data = await r.json();
-    document.getElementById("thinking")?.remove();
-    addMsg(data.answer || data.error, "bot");
+    try {
+      const r = await fetch(`${API}/chat`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ question: q, studentGroup: userGroup })
+      });
+      const data = await r.json();
+      document.getElementById("thinking")?.remove();
+      addMsg(data.answer || data.error, "bot");
+    } catch (err) {
+      document.getElementById("thinking")?.remove();
+      addMsg("❌ Erreur de connexion au serveur", "bot");
+    }
   };
 
-  function addMsg(t, sender, id="") {
+  function addMsg(t, sender, id = "") {
     const msg = document.createElement("div");
     msg.className = `msg ${sender}`;
     if (id) msg.id = id;
     msg.innerText = t;
-    document.getElementById("chat-area").appendChild(msg);
-    const area = document.getElementById("chat-area");
-    area.scrollTop = area.scrollHeight;
+    const chatArea = document.getElementById("chat-area");
+    chatArea.appendChild(msg);
+    chatArea.scrollTop = chatArea.scrollHeight;
   }
 
   const drop = document.getElementById("drop-zone");
@@ -183,12 +223,16 @@
   async function verify(file) {
     const resDiv = document.getElementById("verify-result");
     resDiv.innerHTML = "📄 Calcul du hash...";
-    const buf = await file.arrayBuffer();
-    const hash = await crypto.subtle.digest("SHA-256", buf);
-    const hex = Array.from(new Uint8Array(hash)).map(b=>b.toString(16).padStart(2,"0")).join("");
-    const r = await fetch(`${API}/verify/document/${hex}`);
-    const data = await r.json();
-    resDiv.innerHTML = data.isValid ? "✅ Document authentique" : "❌ Document inconnu";
+    try {
+      const buf = await file.arrayBuffer();
+      const hash = await crypto.subtle.digest("SHA-256", buf);
+      const hex = Array.from(new Uint8Array(hash)).map(b => b.toString(16).padStart(2, "0")).join("");
+      const r = await fetch(`${API}/verify/document/${hex}`);
+      const data = await r.json();
+      resDiv.innerHTML = data.isValid ? "✅ Document authentique" : "❌ Document inconnu ou falsifié";
+    } catch (err) {
+      resDiv.innerHTML = "❌ Erreur lors de la vérification";
+    }
   }
 
   function toast(msg, type) {

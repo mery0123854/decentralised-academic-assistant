@@ -20,6 +20,9 @@ app.use("/api/document", require("./routes/document.cjs"));
 app.use("/api/chat", require("./routes/chat.cjs"));
 app.use("/api/acknowledge", require("./routes/acknowledge.cjs"));
 app.use("/api/verify", require("./routes/verify.cjs"));
+app.get("/contract-addresses.json", (req, res) => {
+  res.sendFile(path.join(__dirname, "../contract-addresses.json"));
+});
 
 // Récupérer le groupe d'un étudiant
 app.get("/api/student-group/:address", async (req, res) => {
